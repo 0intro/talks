@@ -1,0 +1,340 @@
+An overview of the Go toolchain
+20 Feb 2015
+
+David du Colombier
+djc at 9grid dot fr
+@0intro
+
+http://9grid.fr/
+http://9legacy.org/
+
+* Who am I?
+
+- C developper
+- System, network and kernel development
+- Using Go since November 2009
+- Contributor to Plan 9 and related stuff for many years
+- Current maintainer of the Plan 9 port of Go
+
+* An unusual talk
+
+This is an unusual talk:
+
+- I won't be speaking about the Go language itself
+- Most Go users don't have to know this
+
+But, it might interrest people...
+
+- who are concerned by toolchains and compilers
+- who want to contribute to the Go toolchain
+- who are curious how the Go toolchain works
+
+* Introduction
+
+* Introduction (1)
+
+Go 1.4 (December 2014) runs on eleven operating systems:
+
+- darwin, freebsd, linux, windows (first-class ports)
+- openbsd, netbsd, dragonfly, android, nacl, plan9 and solaris
+
+And three architectures:
+
+- 386, amd64 and arm
+
+* Introduction (2)
+
+Go 1.5 (August 2015) will support one additional operating system:
+
+- ios
+
+And two additional architectures:
+
+- power64 and arm64
+
+* Introduction (3)
+
+As of Go 1.4, three programming languages are used in the Go standard library:
+
+- Go
+- C
+- Assembly
+
+One of the major goal of Go 1.5 wll be to get rid of the C programming language.
+
+* Introduction (4)
+
+Go allows you to cross-compile Go programs on any of these platforms to any of these platforms.
+
+For example, on a darwin/amd64 machine, you can compile Go programs for linux/arm.
+
+You may also want to cross-compile the toolchain itself.
+
+For example, you may want to build a Linux distribution for your Raspberry Pi, including the Go toolchain.
+
+How does it work?
+
+* A quick reminder
+
+Difference between _host_ and _target_:
+
+- The _host_ is the system and architecture you're running
+- The _target_ is the system and architecture you want your program to run on
+- When you compile a program to execute on your own machine, _host_ = _target_
+
+* Organization of the Go toolchain
+
+* Organization of the Go toolchain (1)
+
+The Go toolchain is derived from the Plan 9 toolchain, written by Ken Thompson.
+
+- `cmd/dist`: distribution tool
+- `cmd/[568]a`: assembler
+- `cmd/[568]c`: C compiler
+- `cmd/[568]g`: Go compiler
+- `cmd/[568]l`: linker
+- `cmd/cc`: portable code of the C compiler
+- `cmd/gc`: portable code of the Go compiler
+- `cmd/ld`: portable code of the linker
+
+* Organization of the Go toolchain (2)
+
+The first character of the assembler, compilers and linker name corresponds to the target architecture:
+
+- `5`: arm
+- `6`: amd64
+- `7`: arm64
+- `8`: 386
+- `9`: power64
+
+This is called `thechar` internally.
+
+* Organization of the Go toolchain (3)
+
+The compilation of the Go toolchain depends on the following internal libraries:
+
+- `lib9`
+- `libbio`
+- `liblink`
+
+And also the system libc.
+
+Except on Plan 9, the C tools will generally be dynamically-linked with the system libc.
+
+* Organization of the Go toolchain (4)
+
+All these tools and libraries are compiled with the system C compiler (`$CC`), usually:
+
+- GCC or Clang on POSIX systems
+- MinGW on Windows
+- Plan 9 C compiler on Plan 9
+
+* Compiling Go programs
+
+* Compiling Go programs (1)
+
+Once you built the Go compiler, you can cross-compile Go programs and packages by specifying the following environment variables:
+
+- `$GOARCH` specifies the target architecture for installed packages and tools
+- `$GOOS` specifies the target operating system for installed packages and tools
+
+The different ARM architectures are specified with the `$GOARM` variable.
+ARMv5, ARMv6 and ARMv7 are supported.
+
+Compiling or cross-compiling works exactly the same way.
+
+* Compiling Go programs (2)
+
+The `$GOARCH` will select the assembler, compiler and linker program corresponding to the choosen architecture.
+
+- For example, 6a, 6c, 6g and 6l on amd64
+
+The `$GOOS` variable will tell the linker which binary format to produce:
+
+- Mach-O on OS X
+- PE on Windows
+- Plan 9 a.out on Plan 9
+- ELF on all other systems
+
+* Compiling Go programs (3)
+
+What happen when I type `go` `build` in a package:
+
+	% cd $GOPATH/src/github.com/0intro/pcap
+	% mkdir -p $WORK/github.com/0intro
+	% 6g -o $WORK/github.com/0intro/pcap.a -pack const.go pcap.go
+
+What happen when I type `go` `build` in a program:
+
+	% cd $GOPATH/src/github.com/0intro/pcap/cmd/pcapdump
+	% mkdir -p $WORK/github.com/0intro/pcap/cmd
+	% 6g -o $WORK/github.com/0intro/pcap/cmd/pcapdump.a -I $WORK -pack main.go
+	% 6l -o pcapdump -L $WORK $WORK/github.com/0intro/pcap/cmd/pcapdump.a
+
+* Calling C from Go (1)
+
+It is possible to call C code in a Go program using `cgo`.
+Then, the Go program could be statically or dynamically-linked with the library called by `cgo`.
+
+For example, in the standard library, the following packages depend on the libc:
+
+- The _net_ package on POSIX systems (for name resolution)
+- The _crypto/x509_ package on OS X (for access to root certificates)
+
+Also, `cgo` can be disabled when the Go toolchain has been compiled, either:
+
+- With `CGO_ENABLED=0`
+- For a _target_ different from your _host_ (unless `$CC_FOR_TARGET` is set)
+- For a _target_ that doesn't support `cgo`
+
+
+* Calling C from Go (2)
+
+It used to be possible to include C code into a Go package, under the following conditions:
+
+- It calls `[568]c`, so the C code have to match the Plan 9 style
+- You have to declare the C functions in a Go file
+- The C function names are preceded by a middle dot (·)
+
+However:
+
+- This feature was removed in Go 1.4
+- This is still used in the Go 1.4 runtime
+- The C compiler will definitely be removed in Go 1.5
+
+* Compiling Go
+
+* Compiling Go
+
+What happen when I type:
+
+	% ./make.bash
+
+This script will compile and launch the `cmd/dist` tool, which will take care of the compilation of the toolchain.
+The `dist` tool has replaced the use of Makefile since February 2012.
+
+* Build steps: native
+
+I'm running linux/amd64 and I want to be able to build Go binaries for linux/amd64.
+
+	% ./make.bash
+
+Three steps:
+
+	# Building C bootstrap tool.
+
+Build the `cmd/dist` tool using the native C compiler (`$CC`).
+
+	# Building compilers and Go bootstrap tool for host, linux/amd64.
+
+Call `dist` `bootstrap` to build the assembler, C and Go compilers and the necessary packages to build the `go_bootstrap` binary.
+
+	# Building packages and commands for linux/amd64.
+
+Call `go_bootstrap` to build all the Go packages and commands, including the `go` tool.
+
+* Build steps: cross-compiling (1)
+
+I'm running linux/amd64 and I want to be able to build Go binaries for darwin/amd64.
+
+	% GOOS=darwin GOARCH=amd64 ./make.bash
+
+Four steps:
+
+	# Building C bootstrap tool.
+
+Build the `cmd/dist` tool using the native C compiler (`$CC`).
+
+	# Building compilers and Go bootstrap tool for host, linux/amd64.
+
+Call `dist` `bootstrap` to build the assembler, C and Go compilers and the necessary packages to build the `go_bootstrap` binary.
+
+	# Building packages and commands for host, linux/amd64.
+
+Call `go_bootstrap` to build all the Go packages and commands for the host.
+
+* Build steps: cross-compiling (2)
+
+	# Building packages and commands for darwin/amd64.
+
+Call `go_bootstrap` to build all the Go packages and commands for the target.
+
+
+* Cross-compiling Go
+
+
+* Cross-compiling Go (1)
+
+Why?
+
+- I want to compile the Go toolchain for another architecture or operating system
+- For example, I'm building a Linux distribution for my Raspberry Pi, and I want to be able to compile Go programs on it
+
+* Cross-compiling Go (2)
+
+Unfortunately, Go can't be cross-compiled as is:
+
+- Setting `$GOOS` and `$GOARCH` only affects the output of the Go compiler
+- The C tools and libraries are compiled with your host compiler
+- Setting `$CC` will not work since you also need to compile the dist tool and compilers for the host
+
+* Cross-compiling Go (3)
+
+But you can easily change the dist tool and the make script:
+
+- Define a `$CC_TARGET` variable set to your cross-compiler
+- The `$CC` variable is still set to your host compiler and will be used to compile the dist tool and compilers
+- Add a `target` command in `cmd/dist` to compile the C tools and libraries
+- Call `dist target` in make.bash with `GOHOSTARCH=$GOARCH` and `CC=$CC_TARGET`, just after building the 'cmd/dist` tool
+
+So, now you can run:
+
+	GOOS=linux GOARCH=arm GOARM=6 CC_TARGET=arm-bcm2708-linux-gnueabi-gcc ./make.bash
+
+* Cross-compiling Go (4)
+
+Rémy Pommarel wrote a small patch that follow this principle:
+
+.link https://github.com/repk/muslpi/blob/master/opt/go/go.patch github.com/repk/muslpi/blob/master/opt/go/go.patch
+
+* Go 1.5 changes
+
+* Go 1.5 changes (1)
+
+- The runtime doesn't contain any C code anymore
+- So we can get rid of the C compiler
+- The `cmd/dist` tool has been rewritten in Go
+- The assembler and Go compiler has been automatically converted in Go using Russ Cox `c2go` tool
+- Russ Cox is working on a new linker written in Go
+- Rob Pike is working on a new assembler written in Go
+- So we can get rid of the various C libraries (`lib9`, `libbio` and `liblink`)
+
+* Go 1.5 changes (2)
+
+Consequences:
+
+- No C code anymore
+- You will need Go (⩾ 1.4) to compile Go
+- The old Go directory has to be specified with the environment variable `$GOROOT_BOOTSTRAP`
+- You will no longer require a C compiler to build Go
+- Porting Go to new platforms will be more difficult
+
+* Go 1.5 build process
+
+Four steps:
+
+	# Building Go bootstrap tool.
+
+Build the `cmd/dist` tool using the Go (⩾ 1.4) compiler (`$GOROOT_BOOTSTRAP`).
+
+	# Building Go toolchain using /home/djc/go1.4.
+
+Build the assembler, Go compiler and linker using the Go (⩾ 1.4) compiler.
+
+	# Building compilers and go_bootstrap for host, linux/amd64.
+
+Call `dist` `bootstrap` to build the assembler, Go compilers and linker and the necessary packages to build the `go_bootstrap` binary.
+
+	# Building packages and commands for linux/amd64.
+
+Call `go_bootstrap` to build all the Go packages and commands, including the `go` tool.
